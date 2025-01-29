@@ -6,3 +6,4 @@ pydantic==2.6.4
 chromadb
 pandas==2.2.1
 python-multipart==0.0.9
+beautifulsoup4
