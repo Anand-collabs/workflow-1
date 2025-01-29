@@ -3,6 +3,6 @@ uvicorn==0.27.1
 langchain-groq==0.1.2
 langchain-community==0.0.32
 pydantic==2.6.4
-chromadb==0.4.24
+chromadb
 pandas==2.2.1
 python-multipart==0.0.9
