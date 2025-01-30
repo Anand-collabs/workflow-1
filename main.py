@@ -52,6 +52,7 @@ def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+
 @app.post("/generate-email")
 async def generate_email(request: URLRequest):
     try:
@@ -64,40 +65,63 @@ async def generate_email(request: URLRequest):
             ### SCRAPED TEXT FROM WEBSITE:
             {page_data}
             ### INSTRUCTION:
-            Extract job postings into JSON with keys: `role`, `experience`, `skills` and `description`.
-            ### VALID JSON (NO PREAMBLE):
+            Extract THE SINGLE JOB POSTING into JSON with keys: 
+            `role`, `experience`, `skills` (as array), and `description`.
+            ### VALID JSON (NO MARKDOWN):
         """)
         
         chain_extract = extract_prompt | llama
         res = chain_extract.invoke(input={'page_data': page_scrap})
+        
+        # Handle potential array response
         json_res = JsonOutputParser().parse(res.content)
+        if isinstance(json_res, list):
+            json_res = json_res[0]  # Take first job if multiple
+            
+        # Ensure skills is a list
+        skills = json_res.get('skills', [])
+        if isinstance(skills, str):
+            skills = [s.strip() for s in skills.split(',')]
         
         # Query portfolio database
-        links = collection.query(
-            query_texts=json_res['skills'], 
+        results = collection.query(
+            query_texts=skills,
             n_results=2
-        ).get('metadatas', [])
+        )
+        
+        # Extract unique links from results
+        links = []
+        if results and 'metadatas' in results:
+            for metadata_list in results['metadatas']:
+                for item in metadata_list:
+                    if 'links' in item:
+                        links.append(item['links'])
+        unique_links = list(set(links))[:3]  # Get top 3 unique links
         
         # Generate email
         email_prompt = PromptTemplate.from_template("""
             ### JOB DESCRIPTION:
-            {job_description}
+            {job_data}
+            
+            ### RELEVANT WORK LINKS:
+            {links}
+            
             ### INSTRUCTION:
-            Write a cold email as HR, BDE at Company, describing capabilities for this job.
+            Write a professional email showing how our experience matches 
+            these requirements. Use the links to showcase relevant work.
             ### EMAIL (NO PREAMBLE):
         """)
         
         chain_email = email_prompt | llama
         email_res = chain_email.invoke({
-            "job_description": str(json_res), 
-            "link_list": links
+            "job_data": str(json_res),
+            "links": "\n- ".join(unique_links)
         })
         
         return {"email": email_res.content}
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
